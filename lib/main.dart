@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:webrtc_tutorial/firebase_options.dart';
+import 'package:webrtc_tutorial/pusher_service.dart';
 import 'package:webrtc_tutorial/signaling.dart';
 
 Future<void> main() async {
@@ -16,6 +17,9 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await PusherClientService.instance.init();
+
   runApp(MyApp());
 }
 

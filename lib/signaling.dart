@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
+import 'package:webrtc_tutorial/pusher_service.dart';
 
 typedef void StreamStateCallback(MediaStream stream);
 
 class Signaling {
+  final String _url = "http://192.168.100.3:8000/api";
+
   // configuration for iceServers
   // they can be used for free
   // forex "stun" servers which are from google and there are for free usage
@@ -15,6 +20,9 @@ class Signaling {
   // STUN - servers are necessary for connecting clients or devices in order each of them know
   // their external IP-address. It's necessary for properly making "communication" between computer
   // and other resources in internet
+  //
+  // all other "stun" servers you can find here:
+  // https://gist.github.com/mondain/b0ec1cf5f60ae726202e
   Map<String, dynamic> configuration = {
     'iceServers': [
       {
@@ -41,10 +49,11 @@ class Signaling {
   //
   StreamStateCallback? onAddRemoteStream;
 
-  Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
-    FirebaseFirestore db = FirebaseFirestore.instance;
-    DocumentReference roomRef = db.collection('rooms').doc();
+  StreamSubscription<void>? calleeStreamSubs; // same channel stream but accepts different data
 
+  StreamSubscription<void>? callerStreamSubs; // same channel stream but accepts different data
+
+  Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
     print('Create PeerConnection with configuration: $configuration');
 
     peerConnection = await createPeerConnection(configuration);
@@ -55,34 +64,29 @@ class Signaling {
       peerConnection?.addTrack(track, localStream!);
     });
 
-    // Code for collecting ICE candidates below
-    var callerCandidatesCollection = roomRef.collection('callerCandidates');
-
-    peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
-      print('Got candidate: ${candidate.toMap()}');
-      callerCandidatesCollection.add(candidate.toMap());
-    };
-    // Finish Code for collecting ICE candidate
-
-    // Add code for creating a room
+    // Create an offer
     RTCSessionDescription offer = await peerConnection!.createOffer();
+
     await peerConnection!.setLocalDescription(offer);
+
     print('Created offer: $offer');
 
-    Map<String, dynamic> roomWithOffer = {'offer': offer.toMap()};
-    // remember to allow permission for changing data in you firebase project
-    // otherwise it will throw an error
-    // take a look this link
-    // https://stackoverflow.com/questions/46590155/firestore-permission-denied-missing-or-insufficient-permissions
-    try {
-      await roomRef.set(roomWithOffer);
-    } catch (e) {
-      debugPrint("roomRef error is $e");
-    }
-    var roomId = roomRef.id;
+    // Send offer to backend
+    var response = await http.post(
+      Uri.parse('$_url/create-room'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'offer': offer.toMap(),
+      }),
+    );
+
+    var data = jsonDecode(response.body);
+
+    var roomId = data['roomId'];
+
     print('New room created with SDK offer. Room ID: $roomId');
+
     currentRoomText = 'Current room is $roomId - You are the caller!';
-    // Created a Room
 
     peerConnection?.onTrack = (RTCTrackEvent event) {
       print('Got remote track: ${event.streams[0]}');
@@ -93,127 +97,111 @@ class Signaling {
       });
     };
 
-    // Listening for remote session description below
-    roomRef.snapshots().listen((snapshot) async {
-      print('Got updated room: ${snapshot.data()}');
+    // Code for collecting ICE candidates
+    peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
+      print('Got candidate: ${candidate.toMap()}');
+      addIceCandidate(candidate, roomId.toString(), 'caller');
+      peerConnection?.addCandidate(candidate);
+    };
 
-      Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-      if (peerConnection?.getRemoteDescription() != null && data['answer'] != null) {
-        var answer = RTCSessionDescription(
-          data['answer']['sdp'],
-          data['answer']['type'],
-        );
+    final pusherService = await PusherClientService.instance.subscriptionCreator();
 
-        print("Someone tried to connect");
-        await peerConnection?.setRemoteDescription(answer);
-      }
+    final channel = pusherService.publicChannel("webrtc_test_channel_name");
+
+    calleeStreamSubs = pusherService.onConnectionEstablished.listen((e) {
+      channel.subscribeIfNotUnsubscribed();
     });
-    // Listening for remote session description above
 
-    // Listen for remote Ice candidates below
-    roomRef.collection('calleeCandidates').snapshots().listen((snapshot) {
-      snapshot.docChanges.forEach((change) {
-        if (change.type == DocumentChangeType.added) {
-          Map<String, dynamic> data = change.doc.data() as Map<String, dynamic>;
-          print('Got new remote ICE candidate: ${jsonEncode(data)}');
-          peerConnection!.addCandidate(
-            RTCIceCandidate(
-              data['candidate'],
-              data['sdpMid'],
-              data['sdpMLineIndex'],
-            ),
-          );
-        }
-      });
+    await pusherService.connect();
+
+    channel.bind("webrtc_test_channel.event").listen((e) {
+      // code here tomorrow
     });
-    // Listen for remote ICE candidates above
 
-    return roomId;
+    return roomId.toString();
   }
 
   Future<void> joinRoom(String roomId, RTCVideoRenderer remoteVideo) async {
-    try {
-      FirebaseFirestore db = FirebaseFirestore.instance;
-      print(roomId);
-      DocumentReference roomRef = db.collection('rooms').doc('$roomId');
-      var roomSnapshot = await roomRef.get();
-      print('Got room ${roomSnapshot.exists}');
+    // try {
+    print('Create PeerConnection with configuration: $configuration');
 
-      if (roomSnapshot.exists) {
-        print('Create PeerConnection with configuration: $configuration');
-        peerConnection = await createPeerConnection(configuration);
+    peerConnection = await createPeerConnection(configuration);
 
-        registerPeerConnectionListeners();
+    debugPrint("is peerConnection null: ${peerConnection == null}");
 
-        localStream?.getTracks().forEach((track) {
-          peerConnection?.addTrack(track, localStream!);
-        });
+    registerPeerConnectionListeners();
 
-        // Code for collecting ICE candidates below
-        var calleeCandidatesCollection = roomRef.collection('calleeCandidates');
-        peerConnection!.onIceCandidate = (RTCIceCandidate? candidate) {
-          if (candidate == null) {
-            print('onIceCandidate: complete!');
-            return;
-          }
-          print('onIceCandidate: ${candidate.toMap()}');
-          calleeCandidatesCollection.add(candidate.toMap());
-        };
-        // Code for collecting ICE candidate above
+    localStream?.getTracks().forEach((track) {
+      peerConnection?.addTrack(track, localStream!);
+    });
 
-        peerConnection?.onTrack = (RTCTrackEvent event) {
-          print('Got remote track: ${event.streams[0]}');
-          event.streams[0].getTracks().forEach((track) {
-            print('Add a track to the remoteStream: $track');
-            remoteStream?.addTrack(track);
-          });
-        };
+    // for getting room configuration
+    var responseForRemoteConfig = await http.post(
+      Uri.parse('$_url/join-room'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'roomId': roomId,
+      }),
+    );
 
-        // Code for creating SDP answer below
-        var data = roomSnapshot.data() as Map<String, dynamic>;
-        print('Got offer $data');
-        var offer = data['offer'];
-        await peerConnection?.setRemoteDescription(
-          RTCSessionDescription(offer['sdp'], offer['type']),
-        );
-        var answer = await peerConnection!.createAnswer();
-        print('Created Answer $answer');
+    var data = jsonDecode(responseForRemoteConfig.body);
 
-        await peerConnection!.setLocalDescription(answer);
+    var offer = data['offer'];
 
-        Map<String, dynamic> roomWithAnswer = {
-          'answer': {'type': answer.type, 'sdp': answer.sdp}
-        };
+    debugPrint("getting data for setting config: ${offer['sdp']} | type: ${offer['type']}");
 
-        await roomRef.update(roomWithAnswer);
-        // Finished creating SDP answer
+    await peerConnection?.setRemoteDescription(
+      new RTCSessionDescription(
+        offer['sdp'],
+        offer['type'],
+      ),
+    );
 
-        // Listening for remote ICE candidates below
-        roomRef.collection('callerCandidates').snapshots().listen((snapshot) {
-          snapshot.docChanges.forEach((document) {
-            var data = document.doc.data() as Map<String, dynamic>;
-            print(data);
-            print('Got new remote ICE candidate: $data');
-            peerConnection!.addCandidate(
-              RTCIceCandidate(
-                data['candidate'],
-                data['sdpMid'],
-                data['sdpMLineIndex'],
-              ),
-            );
-          });
-        });
-      }
-    } catch (e) {
-      debugPrint("is any error in join room: $e");
-    }
+    var answer = await peerConnection!.createAnswer();
+
+    await peerConnection!.setLocalDescription(answer);
+
+    print('Created Answer $answer');
+
+    var localDesc = await peerConnection!.getLocalDescription();
+
+    peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
+      addIceCandidate(candidate, roomId, 'callee');
+    };
+
+    debugPrint("local desc is: ${localDesc?.toMap()}");
+
+    var response = await http.post(
+      Uri.parse('$_url/join-room'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'roomId': roomId,
+        'answer': localDesc?.toMap(),
+      }),
+    );
+
+    // Create an answer
+
+    peerConnection?.onTrack = (RTCTrackEvent event) {
+      print('Got remote track: ${event.streams[0]}');
+      event.streams[0].getTracks().forEach((track) {
+        print('Add a track to the remoteStream $track');
+        remoteStream?.addTrack(track);
+      });
+    };
+    // } catch (e) {
+    //   debugPrint("is any error in join room: $e");
+    // }
   }
 
   Future<void> openUserMedia(
     RTCVideoRenderer localVideo,
     RTCVideoRenderer remoteVideo,
   ) async {
-    var stream = await navigator.mediaDevices.getUserMedia({'video': true, 'audio': false});
+    var stream = await navigator.mediaDevices.getUserMedia({
+      'video': true,
+      'audio': false, // set true in the future
+    });
 
     localVideo.srcObject = stream;
     localStream = stream;
@@ -245,8 +233,42 @@ class Signaling {
       await roomRef.delete();
     }
 
+    calleeStreamSubs?.cancel();
+    callerStreamSubs?.cancel();
     localStream!.dispose();
     remoteStream?.dispose();
+  }
+
+  void addIceCandidate(RTCIceCandidate candidate, String roomId, String role) async {
+    final response = await http.post(
+      Uri.parse('$_url/add-ice-candidate'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'roomId': roomId,
+        'candidate': candidate.toMap(),
+        'role': role,
+      }),
+    );
+    debugPrint("adding Ice candidate data: ${response.body}");
+  }
+
+  Future<void> getIceCandidates(String roomId, String role) async {
+    var response = await http.get(
+      Uri.parse('$_url/api/get-ice-candidates/$roomId/$role'),
+    );
+
+    var data = jsonDecode(response.body);
+    var candidates = data['candidates'];
+
+    for (var candidate in candidates) {
+      peerConnection!.addCandidate(
+        RTCIceCandidate(
+          candidate['candidate'],
+          candidate['sdpMid'],
+          candidate['sdpMLineIndex'],
+        ),
+      );
+    }
   }
 
   void registerPeerConnectionListeners() {
