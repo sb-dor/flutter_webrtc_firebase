@@ -63,9 +63,16 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void initState() {
+    super.initState();
+    _initRenderers();
+  }
+
+  void _initRenderers() async {
     // initializing the local and remote renderers
-    _localRenderer.initialize();
-    _remoteRenderer.initialize();
+    await _localRenderer.initialize();
+    await _remoteRenderer.initialize();
+
+    setState(() {});
 
     //
     //
@@ -75,8 +82,6 @@ class _MyHomePageState extends State<MyHomePage> {
       _remoteRenderer.srcObject = stream;
       setState(() {}); // setState is not required but let it be here for double checking
     });
-
-    super.initState();
   }
 
   // also do not forget to dispose
@@ -103,8 +108,9 @@ class _MyHomePageState extends State<MyHomePage> {
             spacing: 10,
             children: [
               ElevatedButton(
-                onPressed: () {
-                  signaling.openUserMedia(_localRenderer, _remoteRenderer);
+                onPressed: () async {
+                  await signaling.openUserMedia(_localRenderer, _remoteRenderer);
+                  setState(() {});
                 },
                 child: Text("Open camera & microphone"),
               ),
@@ -123,12 +129,13 @@ class _MyHomePageState extends State<MyHomePage> {
                 width: 8,
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   // Add roomId
-                  signaling.joinRoom(
+                  await signaling.joinRoom(
                     textEditingController.text.trim(),
                     _remoteRenderer,
                   );
+                  setState(() {});
                 },
                 child: Text("Join room"),
               ),
