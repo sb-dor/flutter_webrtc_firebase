@@ -54,71 +54,107 @@ class Signaling {
   StreamSubscription<void>? callerStreamSubs; // same channel stream but accepts different data
 
   Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
-    print('Create PeerConnection with configuration: $configuration');
+    try{
+      print('Create PeerConnection with configuration: $configuration');
 
-    peerConnection = await createPeerConnection(configuration);
+      peerConnection = await createPeerConnection(configuration);
 
-    registerPeerConnectionListeners();
+      registerPeerConnectionListeners();
 
-    localStream?.getTracks().forEach((track) {
-      peerConnection?.addTrack(track, localStream!);
-    });
-
-    // Create an offer
-    RTCSessionDescription offer = await peerConnection!.createOffer();
-
-    await peerConnection!.setLocalDescription(offer);
-
-    print('Created offer: $offer');
-
-    // Send offer to backend
-    var response = await http.post(
-      Uri.parse('$_url/create-room'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'offer': offer.toMap(),
-      }),
-    );
-
-    var data = jsonDecode(response.body);
-
-    var roomId = data['roomId'];
-
-    print('New room created with SDK offer. Room ID: $roomId');
-
-    currentRoomText = 'Current room is $roomId - You are the caller!';
-
-    peerConnection?.onTrack = (RTCTrackEvent event) {
-      print('Got remote track: ${event.streams[0]}');
-
-      event.streams[0].getTracks().forEach((track) {
-        print('Add a track to the remoteStream $track');
-        remoteStream?.addTrack(track);
+      localStream?.getTracks().forEach((track) {
+        peerConnection?.addTrack(track, localStream!);
       });
-    };
 
-    // Code for collecting ICE candidates
-    peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
-      print('Got candidate: ${candidate.toMap()}');
-      addIceCandidate(candidate, roomId.toString(), 'caller');
-      peerConnection?.addCandidate(candidate);
-    };
+      // Create an offer
+      RTCSessionDescription offer = await peerConnection!.createOffer();
 
-    final pusherService = await PusherClientService.instance.subscriptionCreator();
+      await peerConnection!.setLocalDescription(offer);
 
-    final channel = pusherService.publicChannel("webrtc_test_channel_name");
+      print('Created offer: $offer');
 
-    calleeStreamSubs = pusherService.onConnectionEstablished.listen((e) {
-      channel.subscribeIfNotUnsubscribed();
-    });
+      // Send offer to backend
+      var response = await http.post(
+        Uri.parse('$_url/create-room'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'offer': offer.toMap(),
+        }),
+      );
 
-    await pusherService.connect();
+      var data = jsonDecode(response.body);
 
-    channel.bind("webrtc_test_channel.event").listen((e) {
-      // code here tomorrow
-    });
+      var roomId = data['roomId'];
 
-    return roomId.toString();
+      print('New room created with SDK offer. Room ID: $roomId');
+
+      currentRoomText = 'Current room is $roomId - You are the caller!';
+
+      peerConnection?.onTrack = (RTCTrackEvent event) {
+        print('Got remote track: ${event.streams[0]}');
+
+        event.streams[0].getTracks().forEach((track) {
+          print('Add a track to the remoteStream $track');
+          remoteStream?.addTrack(track);
+        });
+      };
+
+      // Code for collecting ICE candidates
+      peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
+        print('Got candidate: ${candidate.toMap()}');
+        addIceCandidate(candidate, roomId.toString(), 'caller');
+      };
+
+      ///
+      ///
+      ///
+      try {
+        final pusherService = await PusherClientService.instance.subscriptionCreator();
+
+        final channel = pusherService.publicChannel("webrtc_test_channel_name");
+
+        calleeStreamSubs = pusherService.onConnectionEstablished.listen((e) {
+          channel.subscribeIfNotUnsubscribed();
+        });
+
+        await pusherService.connect();
+
+        channel.bind("webrtc_test_channel.event").listen((e) async {
+          debugPrint("creating room binding channel data: ${e.data}");
+          // code here tomorrow
+          Map<String, dynamic> data = e.data is String ? jsonDecode(e.data.toString()) : e.data;
+
+          if (data.containsKey("answer")) {
+            var answer = RTCSessionDescription(
+              data['answer']['sdp'],
+              data['answer']['type'],
+            );
+            await peerConnection?.setRemoteDescription(answer);
+          }
+
+          if (data.containsKey("candidate") &&
+              data.containsKey("role") &&
+              data['role'] == 'callee') {
+            peerConnection?.addCandidate(RTCIceCandidate(
+              data['candidate']['candidate'],
+              data['candidate']['sdpMid'],
+              data['candidate']['sdpMLineIndex'],
+            ));
+          }
+        });
+      } catch (e) {
+        debugPrint("creating pusher for creating room error is: $e");
+      }
+
+      ///
+      ///
+      ///
+      ///
+
+      return roomId.toString();
+    }catch(e){
+      debugPrint("creating room error is: $e");
+      return '';
+    }
   }
 
   Future<void> joinRoom(String roomId, RTCVideoRenderer remoteVideo) async {
@@ -189,6 +225,51 @@ class Signaling {
         remoteStream?.addTrack(track);
       });
     };
+
+    ///
+    ///
+    ///
+    ///
+    ///
+
+    final pusherService = await PusherClientService.instance.subscriptionCreator();
+
+    final channel = pusherService.publicChannel("webrtc_test_channel_name");
+
+    callerStreamSubs = pusherService.onConnectionEstablished.listen((e) {
+      channel.subscribeIfNotUnsubscribed();
+    });
+
+    channel.bind("webrtc_test_channel.event").listen((e) async {
+      debugPrint("joining room binding channel data: ${e.data}");
+      // code here tomorrow
+      Map<String, dynamic> data = e.data is String ? jsonDecode(e.toString()) : e.data;
+
+
+      if (data.containsKey("answer")) {
+        var answer = RTCSessionDescription(
+          data['answer']['sdp'],
+          data['answer']['type'],
+        );
+        await peerConnection?.setRemoteDescription(answer);
+      }
+
+      if (data.containsKey("candidate") &&
+          data.containsKey("role") &&
+          data['role'] == 'caller') {
+        peerConnection?.addCandidate(RTCIceCandidate(
+          data['candidate']['candidate'],
+          data['candidate']['sdpMid'],
+          data['candidate']['sdpMLineIndex'],
+        ));
+      }
+    });
+
+    ///
+    ///
+    ///
+    ///
+
     // } catch (e) {
     //   debugPrint("is any error in join room: $e");
     // }
@@ -239,7 +320,11 @@ class Signaling {
     remoteStream?.dispose();
   }
 
-  void addIceCandidate(RTCIceCandidate candidate, String roomId, String role) async {
+  void addIceCandidate(
+    RTCIceCandidate candidate,
+    String roomId,
+    String role,
+  ) async {
     final response = await http.post(
       Uri.parse('$_url/add-ice-candidate'),
       headers: {'Content-Type': 'application/json'},
