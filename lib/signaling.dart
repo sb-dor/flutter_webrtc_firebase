@@ -70,7 +70,7 @@ class Signaling {
 
       await peerConnection!.setLocalDescription(offer);
 
-      print('Created offer: $offer');
+      print('Created offer spd is : ${offer.sdp}');
 
       // Send offer to backend
       var response = await http.post(
@@ -99,8 +99,12 @@ class Signaling {
       };
 
       // Code for collecting ICE candidates
-      peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
-        print('Got candidate: ${candidate.toMap()}');
+      peerConnection?.onIceCandidate = (RTCIceCandidate? candidate) {
+        // print('Got candidate: ${candidate?.toMap()}');
+        if (candidate == null) {
+          print('onIceCandidate: complete!');
+          return;
+        }
         addIceCandidate(candidate, roomId.toString(), 'caller');
       };
 
@@ -171,6 +175,24 @@ class Signaling {
       peerConnection?.addTrack(track, localStream!);
     });
 
+
+    peerConnection!.onIceCandidate = (RTCIceCandidate? candidate) {
+      if (candidate == null) {
+        print('onIceCandidate: complete!');
+        return;
+      }
+      addIceCandidate(candidate, roomId, 'callee');
+    };
+
+    peerConnection?.onTrack = (RTCTrackEvent event) {
+      print('Got remote track: ${event.streams[0]}');
+      event.streams[0].getTracks().forEach((track) {
+        print('Add a track to the remoteStream $track');
+        remoteStream?.addTrack(track);
+      });
+    };
+
+
     // for getting room configuration
     var responseForRemoteConfig = await http.post(
       Uri.parse('$_url/join-room'),
@@ -184,12 +206,16 @@ class Signaling {
 
     var offer = data['offer'];
 
-    debugPrint("getting data for setting config: ${offer['sdp']} | type: ${offer['type']}");
+    print("offer sdp data: ${offer['sdp'].runtimeType}");
+
+    print("offer type data: ${offer['type'].runtimeType}");
+
+
 
     await peerConnection?.setRemoteDescription(
       new RTCSessionDescription(
         offer['sdp'],
-        offer['type'],
+        offer['type'].toString(),
       ),
     );
 
@@ -197,35 +223,18 @@ class Signaling {
 
     await peerConnection!.setLocalDescription(answer);
 
-    print('Created Answer $answer');
-
-    var localDesc = await peerConnection!.getLocalDescription();
-
-    peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-      addIceCandidate(candidate, roomId, 'callee');
-    };
-
-    debugPrint("local desc is: ${localDesc?.toMap()}");
+    debugPrint("answer desc is: ${answer.toMap()}");
 
     var response = await http.post(
       Uri.parse('$_url/join-room'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'roomId': roomId,
-        'answer': localDesc?.toMap(),
+        'answer': answer.toMap(),
       }),
     );
 
     // Create an answer
-
-    peerConnection?.onTrack = (RTCTrackEvent event) {
-      print('Got remote track: ${event.streams[0]}');
-      event.streams[0].getTracks().forEach((track) {
-        print('Add a track to the remoteStream $track');
-        remoteStream?.addTrack(track);
-      });
-    };
-
     ///
     ///
     ///
@@ -244,15 +253,6 @@ class Signaling {
       debugPrint("joining room binding channel data: ${e.data}");
       // code here tomorrow
       Map<String, dynamic> data = e.data is String ? jsonDecode(e.toString()) : e.data;
-
-
-      if (data.containsKey("answer")) {
-        var answer = RTCSessionDescription(
-          data['answer']['sdp'],
-          data['answer']['type'],
-        );
-        await peerConnection?.setRemoteDescription(answer);
-      }
 
       if (data.containsKey("candidate") &&
           data.containsKey("role") &&
