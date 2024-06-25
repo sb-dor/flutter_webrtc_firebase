@@ -54,7 +54,7 @@ class Signaling {
   StreamSubscription<void>? callerStreamSubs; // same channel stream but accepts different data
 
   Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
-    try{
+    try {
       print('Create PeerConnection with configuration: $configuration');
 
       peerConnection = await createPeerConnection(configuration);
@@ -70,7 +70,7 @@ class Signaling {
 
       await peerConnection!.setLocalDescription(offer);
 
-      print('Created offer spd is : ${offer.sdp}');
+      print('Created offer ${await peerConnection?.getLocalDescription()}');
 
       // Send offer to backend
       var response = await http.post(
@@ -155,7 +155,7 @@ class Signaling {
       ///
 
       return roomId.toString();
-    }catch(e){
+    } catch (e) {
       debugPrint("creating room error is: $e");
       return '';
     }
@@ -175,7 +175,6 @@ class Signaling {
       peerConnection?.addTrack(track, localStream!);
     });
 
-
     peerConnection!.onIceCandidate = (RTCIceCandidate? candidate) {
       if (candidate == null) {
         print('onIceCandidate: complete!');
@@ -192,7 +191,6 @@ class Signaling {
       });
     };
 
-
     // for getting room configuration
     var responseForRemoteConfig = await http.post(
       Uri.parse('$_url/join-room'),
@@ -204,35 +202,57 @@ class Signaling {
 
     var data = jsonDecode(responseForRemoteConfig.body);
 
+    if (data == null || !data.containsKey('offer')) {
+      throw Exception('Invalid response from server: $data');
+    }
+
     var offer = data['offer'];
 
-    print("offer sdp data: ${offer['sdp'].runtimeType}");
+    if (offer == null || !offer.containsKey('sdp') || !offer.containsKey('type')) {
+      throw Exception('Invalid offer data: $offer');
+    }
 
-    print("offer type data: ${offer['type'].runtimeType}");
+    String sdp = offer['sdp'];
+    String type = offer['type'];
 
+    print("Offer SDP data: $sdp");
+    print("Offer type data: $type");
 
+    debugPrint("Checking remote desc before init: ${await peerConnection?.getRemoteDescription()}");
 
-    await peerConnection?.setRemoteDescription(
-      new RTCSessionDescription(
-        offer['sdp'],
-        offer['type'].toString(),
-      ),
-    );
+    if (sdp.isEmpty || type.isEmpty) {
+      throw Exception('SDP or Type is empty');
+    }
 
-    var answer = await peerConnection!.createAnswer();
+    // Log the state of the peer connection
+    print("PeerConnection state: ${peerConnection?.connectionState}");
 
-    await peerConnection!.setLocalDescription(answer);
+    RTCSessionDescription remoteDescription = RTCSessionDescription(sdp, type);
 
-    debugPrint("answer desc is: ${answer.toMap()}");
+    try {
+      await peerConnection?.setRemoteDescription(remoteDescription);
+    } catch (e) {
+      debugPrint("peer connection set remote desc failed: $e");
+    }
 
-    var response = await http.post(
-      Uri.parse('$_url/join-room'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'roomId': roomId,
-        'answer': answer.toMap(),
-      }),
-    );
+    try {
+      var answer = await peerConnection!.createAnswer();
+
+      await peerConnection!.setLocalDescription(answer);
+
+      debugPrint("answer desc is: ${answer.toMap()}");
+
+      var response = await http.post(
+        Uri.parse('$_url/join-room'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'roomId': roomId,
+          'answer': answer.toMap(),
+        }),
+      );
+    } catch (e) {
+      debugPrint("creating answer error is: $e");
+    }
 
     // Create an answer
     ///
@@ -254,9 +274,7 @@ class Signaling {
       // code here tomorrow
       Map<String, dynamic> data = e.data is String ? jsonDecode(e.toString()) : e.data;
 
-      if (data.containsKey("candidate") &&
-          data.containsKey("role") &&
-          data['role'] == 'caller') {
+      if (data.containsKey("candidate") && data.containsKey("role") && data['role'] == 'caller') {
         peerConnection?.addCandidate(RTCIceCandidate(
           data['candidate']['candidate'],
           data['candidate']['sdpMid'],
