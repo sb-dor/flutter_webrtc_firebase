@@ -202,21 +202,10 @@ class Signaling {
 
     var data = jsonDecode(responseForRemoteConfig.body);
 
-    if (data == null || !data.containsKey('offer')) {
-      throw Exception('Invalid response from server: $data');
-    }
-
     var offer = data['offer'];
-
-    if (offer == null || !offer.containsKey('sdp') || !offer.containsKey('type')) {
-      throw Exception('Invalid offer data: $offer');
-    }
 
     String sdp = offer['sdp'];
     String type = offer['type'];
-
-    print("Offer SDP data: $sdp");
-    print("Offer type data: $type");
 
     debugPrint("Checking remote desc before init: ${await peerConnection?.getRemoteDescription()}");
 
