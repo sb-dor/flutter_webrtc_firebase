@@ -1,0 +1,20 @@
+{
+  "" : {
+    "const-values" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master.swiftconstvalues",
+    "dependencies" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master.d",
+    "diagnostics" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master.dia",
+    "emit-module-dependencies" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master-emit-module.dia",
+    "swift-dependencies" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/Runner-master.swiftdeps"
+  },
+  "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  },
+  "/Users/avaz/StudioProjects/webrtc_tutorial/ios/Runner/AppDelegate.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/AppDelegate.o",
+    "llvm-bc" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/AppDelegate.bc",
+    "object" : "/Users/avaz/StudioProjects/webrtc_tutorial/ios/build/Runner.build/Release-iphoneos/Runner.build/Objects-normal/arm64/AppDelegate.o"
+  }
+}

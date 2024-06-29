@@ -123,7 +123,9 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               ElevatedButton(
                 onPressed: () async {
-                  roomId = await signaling.createRoom(_remoteRenderer);
+                  roomId = await signaling.createRoom(_remoteRenderer, () {
+                    setState(() {});
+                  });
                   textEditingController.text = roomId!;
                   setState(() {});
                 },

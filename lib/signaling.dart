@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
@@ -53,7 +54,7 @@ class Signaling {
 
   StreamSubscription<void>? callerStreamSubs; // same channel stream but accepts different data
 
-  Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
+  Future<String> createRoom(RTCVideoRenderer remoteRenderer, VoidCallback setStateFunction) async {
     try {
       print('Create PeerConnection with configuration: $configuration');
 
@@ -68,9 +69,11 @@ class Signaling {
       // Create an offer
       RTCSessionDescription offer = await peerConnection!.createOffer();
 
+      log("sdp value is: ${offer.sdp}");
+
       await peerConnection!.setLocalDescription(offer);
 
-      print('Created offer ${await peerConnection?.getLocalDescription()}');
+      // print('Created offer ${await peerConnection?.getLocalDescription()}');
 
       // Send offer to backend
       var response = await http.post(
@@ -101,6 +104,8 @@ class Signaling {
       // Code for collecting ICE candidates
       peerConnection?.onIceCandidate = (RTCIceCandidate? candidate) {
         // print('Got candidate: ${candidate?.toMap()}');
+        debugPrint("create room candidate data: ${candidate?.toMap()}");
+
         if (candidate == null) {
           print('onIceCandidate: complete!');
           return;
@@ -127,22 +132,35 @@ class Signaling {
           // code here tomorrow
           Map<String, dynamic> data = e.data is String ? jsonDecode(e.data.toString()) : e.data;
 
-          if (data.containsKey("answer")) {
+          if (data.containsKey("answer") && peerConnection?.getRemoteDescription() != null) {
+            String sdp = data['answer']['sdp'] + "\n";
+            String type = data['answer']['type'];
+
             var answer = RTCSessionDescription(
-              data['answer']['sdp'],
-              data['answer']['type'],
+              sdp,
+              type,
             );
+            log("will here work hellu: $sdp");
+            // if (peerConnection?.signalingState ==
+            //     RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+            debugPrint("you have to write some code here");
             await peerConnection?.setRemoteDescription(answer);
+            // await peerConnection?.setLocalDescription(offer);
+            // } else {
+            //   await peerConnection?.setRemoteDescription(answer);
+            // }
           }
 
           if (data.containsKey("candidate") &&
               data.containsKey("role") &&
               data['role'] == 'callee') {
+            debugPrint("coming candidate data");
             peerConnection?.addCandidate(RTCIceCandidate(
               data['candidate']['candidate'],
               data['candidate']['sdpMid'],
               data['candidate']['sdpMLineIndex'],
             ));
+            // setStateFunction;
           }
         });
       } catch (e) {
@@ -164,6 +182,15 @@ class Signaling {
   Future<void> joinRoom(String roomId, RTCVideoRenderer remoteVideo) async {
     // try {
     print('Create PeerConnection with configuration: $configuration');
+
+    // for getting room configuration
+    var responseForRemoteConfig = await http.post(
+      Uri.parse('$_url/join-room'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'roomId': roomId,
+      }),
+    );
 
     peerConnection = await createPeerConnection(configuration);
 
@@ -191,23 +218,16 @@ class Signaling {
       });
     };
 
-    // for getting room configuration
-    var responseForRemoteConfig = await http.post(
-      Uri.parse('$_url/join-room'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'roomId': roomId,
-      }),
-    );
-
     var data = jsonDecode(responseForRemoteConfig.body);
+
+    debugPrint("coming response body: ${responseForRemoteConfig.body}");
 
     var offer = data['offer'];
 
-    String sdp = offer['sdp'];
+    String sdp = offer['sdp'] + "\n";
     String type = offer['type'];
 
-    debugPrint("Checking remote desc before init: ${await peerConnection?.getRemoteDescription()}");
+    log("sdp value is: $sdp");
 
     if (sdp.isEmpty || type.isEmpty) {
       throw Exception('SDP or Type is empty');
@@ -216,10 +236,15 @@ class Signaling {
     // Log the state of the peer connection
     print("PeerConnection state: ${peerConnection?.connectionState}");
 
+    // sdp = sdp.replaceAll("\r\na=extmap-allow-mixed", "");
+
     RTCSessionDescription remoteDescription = RTCSessionDescription(sdp, type);
+
+    debugPrint("remote desc: ${remoteDescription.sdp} | ${remoteDescription.type}");
 
     try {
       await peerConnection?.setRemoteDescription(remoteDescription);
+      debugPrint("remote description successfully added");
     } catch (e) {
       debugPrint("peer connection set remote desc failed: $e");
     }
@@ -249,7 +274,32 @@ class Signaling {
     ///
     ///
     ///
+    ///
 
+    // get candidtated data before listening them
+    final responseCandidates = await http.get(
+      Uri.parse("${_url}/get-ice-candidates/$roomId/caller"),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    Map<String, dynamic> mapOfData = jsonDecode(responseCandidates.body);
+
+    debugPrint("coming response candidates: ${responseCandidates.body}");
+    //
+    List<dynamic> listOfCandidates = mapOfData['candidates'];
+
+    List<Candidate> candidates = listOfCandidates.map((e) => Candidate.fromJson(e)).toList();
+
+    for (final each in candidates) {
+      debugPrint("each candidate: ${each}");
+      await peerConnection?.addCandidate(RTCIceCandidate(
+        each.candidate.candidate,
+        each.candidate.sdpMid,
+        each.candidate.sdpMLineIndex,
+      ));
+    }
+
+    //
     final pusherService = await PusherClientService.instance.subscriptionCreator();
 
     final channel = pusherService.publicChannel("webrtc_test_channel_name");
@@ -384,6 +434,75 @@ class Signaling {
       print("Add remote stream");
       onAddRemoteStream?.call(stream);
       remoteStream = stream;
+    };
+  }
+}
+
+class InnerCandidate {
+  final String candidate;
+  final String sdpMid;
+  final int sdpMLineIndex;
+
+  InnerCandidate({
+    required this.candidate,
+    required this.sdpMid,
+    required this.sdpMLineIndex,
+  });
+
+  factory InnerCandidate.fromJson(Map<String, dynamic> json) {
+    return InnerCandidate(
+      candidate: json['candidate'] as String,
+      sdpMid: json['sdpMid'] as String,
+      sdpMLineIndex: json['sdpMLineIndex'] as int,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'candidate': candidate,
+      'sdpMid': sdpMid,
+      'sdpMLineIndex': sdpMLineIndex,
+    };
+  }
+}
+
+// Model class for the outer candidate structure
+class Candidate {
+  final int id;
+  final int roomId;
+  final InnerCandidate candidate;
+  final String role;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  Candidate({
+    required this.id,
+    required this.roomId,
+    required this.candidate,
+    required this.role,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory Candidate.fromJson(Map<String, dynamic> json) {
+    return Candidate(
+      id: json['id'] as int,
+      roomId: json['room_id'] as int,
+      candidate: InnerCandidate.fromJson(jsonDecode(json['candidate'])),
+      role: json['role'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'room_id': roomId,
+      'candidate': jsonEncode(candidate.toJson()),
+      'role': role,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
     };
   }
 }
