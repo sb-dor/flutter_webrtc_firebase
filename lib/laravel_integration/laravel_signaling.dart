@@ -11,6 +11,8 @@ import 'package:webrtc_tutorial/laravel_integration/pusher_service.dart';
 
 typedef void LaravelStreamStateCallback(MediaStream stream);
 
+typedef void SetStateCallbackSignal();
+
 class LaravelSignaling {
   final String _url = "http://192.168.100.3:8000/api";
 
@@ -50,6 +52,8 @@ class LaravelSignaling {
   //
   //
   LaravelStreamStateCallback? onAddRemoteStream;
+
+  SetStateCallbackSignal? setSetStateCallback;
 
   StreamSubscription<void>? calleeStreamSubs; // same channel stream but accepts different data
 
@@ -133,7 +137,7 @@ class LaravelSignaling {
           // code here tomorrow
           Map<String, dynamic> data = e.data is String ? jsonDecode(e.data.toString()) : e.data;
 
-          if (data.containsKey("answer") && peerConnection?.getRemoteDescription() != null) {
+          if (data.containsKey("answer")) {
             String sdp = data['answer']['sdp'] + "\n";
             String type = data['answer']['type'];
 
@@ -145,24 +149,49 @@ class LaravelSignaling {
             // if (peerConnection?.signalingState ==
             //     RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
             debugPrint("you have to write some code here");
-            await peerConnection?.setRemoteDescription(answer);
-            // await peerConnection?.setLocalDescription(offer);
-            // } else {
-            //   await peerConnection?.setRemoteDescription(answer);
-            // }
+            if(await peerConnection?.getRemoteDescription() == null) {
+              debugPrint("working here for getting data");
+              await peerConnection?.setRemoteDescription(answer);
+              final responseCandidates = await http.get(
+                Uri.parse("${_url}/get-ice-candidates/${roomId}/callee"),
+                headers: {'Content-Type': 'application/json'},
+              );
+
+              Map<String, dynamic> mapOfData = jsonDecode(responseCandidates.body);
+
+              debugPrint("coming response candidates: ${responseCandidates.body}");
+              //
+              List<dynamic> listOfCandidates = mapOfData['candidates'];
+
+              List<Candidate> candidates = listOfCandidates.map((e) => Candidate.fromJson(e)).toList();
+
+              for (final each in candidates) {
+                debugPrint("each candidate: ${each}");
+                await peerConnection?.addCandidate(RTCIceCandidate(
+                  each.candidate.candidate,
+                  each.candidate.sdpMid,
+                  each.candidate.sdpMLineIndex,
+                ));
+              }
+              setSetStateCallback?.call();
+              // await peerConnection?.setLocalDescription(offer);
+              // } else {
+              //   await peerConnection?.setRemoteDescription(answer);
+              // }
+            }
           }
 
-          if (data.containsKey("candidate") &&
-              data.containsKey("role") &&
-              data['role'] == 'callee') {
-            debugPrint("coming candidate data");
-            peerConnection?.addCandidate(RTCIceCandidate(
-              data['candidate']['candidate'],
-              data['candidate']['sdpMid'],
-              data['candidate']['sdpMLineIndex'],
-            ));
-            // setStateFunction;
-          }
+          // if (data.containsKey("candidate") &&
+          //     data.containsKey("role") &&
+          //     data['role'] == 'callee') {
+          //   debugPrint("coming candidate data");
+          //   peerConnection?.addCandidate(RTCIceCandidate(
+          //     data['candidate']['candidate'],
+          //     data['candidate']['sdpMid'],
+          //     data['candidate']['sdpMLineIndex'],
+          //   ));
+          //   // setStateFunction;
+          // }
         });
       } catch (e) {
         debugPrint("creating pusher for creating room error is: $e");
@@ -173,6 +202,7 @@ class LaravelSignaling {
       ///
       ///
 
+      // this.roomId = roomId;
       return roomId.toString();
     } catch (e) {
       debugPrint("creating room error is: $e");

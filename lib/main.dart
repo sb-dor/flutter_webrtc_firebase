@@ -84,7 +84,13 @@ class _MyHomePageState extends State<MyHomePage> {
     // from user we will be able to handle that doing like this code below:
     signaling.onAddRemoteStream = ((stream) {
       _remoteRenderer.srcObject = stream;
+
       setState(() {}); // setState is not required but let it be here for double checking
+    });
+
+    signaling.setSetStateCallback = (() {
+      debugPrint("user data came here 1");
+      setState(() {});
     });
   }
 
