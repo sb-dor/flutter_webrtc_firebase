@@ -369,7 +369,7 @@ class LaravelSignaling {
   ) async {
     var stream = await navigator.mediaDevices.getUserMedia({
       'video': true,
-      'audio': false, // set true in the future
+      'audio': true, // set false in the future
     });
 
     localVideo.srcObject = stream;
