@@ -2,8 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:webrtc_tutorial/firebase_options.dart';
-import 'package:webrtc_tutorial/pusher_service.dart';
-import 'package:webrtc_tutorial/signaling.dart';
+import 'package:webrtc_tutorial/laravel_integration/pusher_service.dart';
+import 'package:webrtc_tutorial/laravel_integration/laravel_signaling.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,7 +48,7 @@ class _MyHomePageState extends State<MyHomePage> {
   // all settings of webrtc
   // all tools that will help us to connect
   // webrtc data
-  Signaling signaling = Signaling();
+  LaravelSignaling signaling = LaravelSignaling();
 
   //
   // these two renderers are for rendering video and audio

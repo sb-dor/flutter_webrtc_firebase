@@ -6,11 +6,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
-import 'package:webrtc_tutorial/pusher_service.dart';
+import 'package:webrtc_tutorial/laravel_integration/candidate.dart';
+import 'package:webrtc_tutorial/laravel_integration/pusher_service.dart';
 
-typedef void StreamStateCallback(MediaStream stream);
+typedef void LaravelStreamStateCallback(MediaStream stream);
 
-class Signaling {
+class LaravelSignaling {
   final String _url = "http://192.168.100.3:8000/api";
 
   // configuration for iceServers
@@ -48,7 +49,7 @@ class Signaling {
 
   //
   //
-  StreamStateCallback? onAddRemoteStream;
+  LaravelStreamStateCallback? onAddRemoteStream;
 
   StreamSubscription<void>? calleeStreamSubs; // same channel stream but accepts different data
 
@@ -438,71 +439,3 @@ class Signaling {
   }
 }
 
-class InnerCandidate {
-  final String candidate;
-  final String sdpMid;
-  final int sdpMLineIndex;
-
-  InnerCandidate({
-    required this.candidate,
-    required this.sdpMid,
-    required this.sdpMLineIndex,
-  });
-
-  factory InnerCandidate.fromJson(Map<String, dynamic> json) {
-    return InnerCandidate(
-      candidate: json['candidate'] as String,
-      sdpMid: json['sdpMid'] as String,
-      sdpMLineIndex: json['sdpMLineIndex'] as int,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'candidate': candidate,
-      'sdpMid': sdpMid,
-      'sdpMLineIndex': sdpMLineIndex,
-    };
-  }
-}
-
-// Model class for the outer candidate structure
-class Candidate {
-  final int id;
-  final int roomId;
-  final InnerCandidate candidate;
-  final String role;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  Candidate({
-    required this.id,
-    required this.roomId,
-    required this.candidate,
-    required this.role,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  factory Candidate.fromJson(Map<String, dynamic> json) {
-    return Candidate(
-      id: json['id'] as int,
-      roomId: json['room_id'] as int,
-      candidate: InnerCandidate.fromJson(jsonDecode(json['candidate'])),
-      role: json['role'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'room_id': roomId,
-      'candidate': jsonEncode(candidate.toJson()),
-      'role': role,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
-    };
-  }
-}
