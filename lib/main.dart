@@ -48,6 +48,9 @@ class _MyHomePageState extends State<MyHomePage> {
   // all settings of webrtc
   // all tools that will help us to connect
   // webrtc data
+
+  // there are two server integration exist in this project
+  // LaravelSignaling and FirebaseSignaling
   LaravelSignaling signaling = LaravelSignaling();
 
   //
